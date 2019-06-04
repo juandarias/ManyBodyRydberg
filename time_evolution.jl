@@ -29,7 +29,7 @@ include("./hamiltonian.jl")
 function JumpOperators(topology, proj_ops)
     Jmp, Γ = [], []
     laserRyd = topology.laserTypes["laserRyd"]
-    n_atoms = length(proj_ops["Excitation_Operators"])
+    n_atoms = length(proj_ops["RXG"])
     
     ### Decay rates
     Γ_weak = 2 * π * 50*10^3 # See 10.1103/PhysRevA.89.033421
@@ -43,12 +43,12 @@ function JumpOperators(topology, proj_ops)
              
     
     for i in 1:n_atoms
-        push!(Jmp, proj_ops["Decay_Operators"][i])
+        push!(Jmp, proj_ops["GXR"][i])
         append!(Γ, +(Γ_1)^0.5)
     end
 
     for i in 1:n_atoms
-        push!(Jmp, proj_ops["Projectors"][i])
+        push!(Jmp, proj_ops["RXR"][i])
         append!(Γ, +(γ_1/2)^0.5)
     end
     Γ = convert(Array{Float64,1}, Γ)
@@ -74,7 +74,7 @@ function MCWFM(atoms_positions, topology, trajectories, save_location)
     sleep(5)
     pos_ops = jldopen(save_location*"pos_ops.jld2", "r", mmaparrays=true)
     proj_ops = jldopen(save_location*"proj_ops.jld2", "r", mmaparrays=true)
-    n_atoms = length(proj_ops["Excitation_Operators"])
+    n_atoms = length(proj_ops["RXG"])
 
 
     ### Prepare Hamiltonian
@@ -93,7 +93,7 @@ function MCWFM(atoms_positions, topology, trajectories, save_location)
     Jmp, Γ = JumpOperators(topology, proj_ops) #Update function definition to use topology data
 
     ### Prepare MCWFM
-    iters = 1e9
+    iters = 1e5
     tfinal, tstep = laserRyd.pulse_length, 1e-6
     T = [0:tstep:tfinal;]
     n_trajectories = trajectories
@@ -103,6 +103,59 @@ function MCWFM(atoms_positions, topology, trajectories, save_location)
     psi_t = @distributed (+) for i in 1:n_trajectories
         timeevolution.mcwf(T, psi0, H_total, Jmp; rates=Γ, seed=UInt(i))[2]
     end
+
+    @save save_location*"Psi_t.jld2" psi_t
+    cp(save_location*"Psi_t.jld2", save_location*"Psi_t.out.jld2", force=true) # 
+    #Solution for issue https://github.com/JuliaIO/JLD2.jl/issues/55    
+end
+
+
+function TDSE(atoms_positions, topology, save_location)
+    #positions, states = Array{Array{Float64,1},1}(), Array{Array{Float64,1},1}()
+    #for atom in atoms
+    #    push!(positions, atom.position)
+    #    push!(states, atom.state)
+    #end
+    
+    ### Read topology
+    laserRyd = topology.laserTypes["laserRyd"]
+    atomRyd = topology.atomTypes["atomRyd"]
+        
+    ### Prepare basis and operators
+    b_mb, posopx, posopy, posopz = basis_operators.ManyBodyBasis(atoms_positions, save_location);
+    basis_operators.PositionOperators(b_mb, posopx, posopy, posopz, save_location);
+    basis_operators.ProjectionOperators(b_mb, save_location);
+    
+    sleep(5)
+    pos_ops = jldopen(save_location*"pos_ops.jld2", "r", mmaparrays=true)
+    proj_ops = jldopen(save_location*"proj_ops.jld2", "r", mmaparrays=true)
+    n_atoms = length(proj_ops["RXG"])
+
+
+    ### Prepare Hamiltonian
+    
+    hamiltonian.Hatom(laserRyd.Δ , proj_ops, save_location);
+    hamiltonian.Hrabi(laserRyd.Ω, proj_ops, save_location);
+    hamiltonian.Hion(atomRyd.C4, pos_ops, proj_ops, save_location);
+    hamiltonian.HvdW(atomRyd.C6, n_atoms, save_location);
+
+
+    sleep(5)
+    h_total_array = hamiltonian.Htotal(save_location);
+    H_total = SparseOperator(b_mb,b_mb, h_total_array)
+
+    ### Decay and decoherence operators
+    Jmp, Γ = JumpOperators(topology, proj_ops) #Update function definition to use topology data
+
+    ### Prepare TDSE
+    iters = 1e6
+    tfinal, tstep = laserRyd.pulse_length, laserRyd.pulse_length/10
+    T = [0:tstep:tfinal;]
+    #n_trajectories = trajectories
+
+    ### Solve TDSE
+    psi0 = basisstate(b_mb,1)
+    psi_t = timeevolution.schroedinger(T, psi0, H_total, maxiters=iters)[2]
 
     @save save_location*"Psi_t.jld2" psi_t
     cp(save_location*"Psi_t.jld2", save_location*"Psi_t.out.jld2", force=true) # 

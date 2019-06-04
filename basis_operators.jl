@@ -70,24 +70,27 @@ function PositionOperators(many_body_basis, Basis_Positions_x, Basis_Positions_y
 end
 
 function ProjectionOperators(many_body_basis, save_location)
-    Projectors, Excitation_Operators, Decay_Operators = [], [], []
+    RXR, GXG, RXG, GXR = [], [], [], []
     bs = SpinBasis(1//2)
     sup = basisstate(bs,2)
     sdown = basisstate(bs,1)
     eXe = sparse(sup ⊗ dagger(sup))
+    gXg = sparse(sdown ⊗ dagger(sdown))
     eXg = sparse(sup ⊗ dagger(sdown))
     gXe = sparse(sdown ⊗ dagger(sup))
     
     n_atoms = count(i->(i==2),many_body_basis.shape)
     for i in 1:n_atoms
-        eiXei = embed(many_body_basis,(4i),eXe)
+        eiXei = embed(many_body_basis,(4i), eXe)
+        giXgi = embed(many_body_basis,(4i), gXg)
         giXei = embed(many_body_basis, (4i), gXe)
         eiXgi = embed(many_body_basis, (4i), eXg)
-        push!(Projectors, sparse(eiXei))
-        push!(Excitation_Operators, sparse(eiXgi))
-        push!(Decay_Operators, sparse(giXei))
+        push!(RXR, sparse(eiXei))
+        push!(GXG, sparse(giXgi))
+        push!(RXG, sparse(eiXgi))
+        push!(GXR, sparse(giXei))
     end
-    @save save_location*"proj_ops.jld2" Projectors Excitation_Operators Decay_Operators
+    @save save_location*"proj_ops.jld2" RXR GXG RXG GXR
     cp(save_location*"proj_ops.jld2", save_location*"proj_ops.out.jld2", force=true) #Solution for issue https://github.com/JuliaIO/JLD2.jl/issues/55
     #proj_ops = jldopen(folder*testname*"proj_ops.jld2", "r", mmaparrays=true) 
     #return proj_ops

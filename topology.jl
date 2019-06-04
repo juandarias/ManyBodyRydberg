@@ -28,7 +28,7 @@ struct AtomType
 end
 
 
-struct LaserType
+mutable struct LaserType
     Δ::Float64
     ω::Float64
     Ω::Float64

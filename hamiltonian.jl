@@ -24,24 +24,38 @@ using LinearAlgebra
 
 ### Laser detuning
 function Hatom(Δ, proj_ops, save_location)
-    n_atoms = length(proj_ops["Excitation_Operators"])
+    n_atoms = length(proj_ops["RXG"])
     dim_b = 2^n_atoms
     H_atom = spzeros(dim_b,dim_b)
     for i in 1:n_atoms
-        h_ai = 0.5 * Δ * proj_ops["Projectors"][i].data
+        h_ai = 0.5 * Δ * proj_ops["RXR"][i].data
         H_atom += h_ai #TODO: is global needed
     end
     save(save_location*"hatom.jld2", "H_atom", H_atom)
 end
 ### Laser detuning
 
+### Laser detuning
+function HatomNew(Δ, proj_ops, save_location)
+    n_atoms = length(proj_ops["RXG"])
+    dim_b = 2^n_atoms
+    H_atom = spzeros(dim_b,dim_b)
+    for i in 1:n_atoms
+        h_ai = 0.5 * Δ * (proj_ops["RXR"][i].data - proj_ops["GXG"][i].data)
+        H_atom += h_ai #TODO: is global needed
+    end
+    save(save_location*"hatom.jld2", "H_atom", H_atom)
+end
+### Laser detuning
+
+
 ### Population transfer
 function Hrabi(Ω, proj_ops, save_location)
-    n_atoms = length(proj_ops["Excitation_Operators"])
+    n_atoms = length(proj_ops["RXG"])
     dim_b = 2^n_atoms
     H_rabi = spzeros(dim_b,dim_b)
     for i in 1:n_atoms
-        h_r = Ω * (proj_ops["Excitation_Operators"][i].data + proj_ops["Decay_Operators"][i].data)
+        h_r = Ω * (proj_ops["RXG"][i].data + proj_ops["GXR"][i].data)
         H_rabi += h_r
     end
     save(save_location*"hrabi.jld2", "H_rabi", H_rabi)
@@ -51,7 +65,7 @@ end
 
 ### Ion-Rydberg
 function Hion(C4, pos_ops, proj_ops, save_location)
-    n_atoms = length(proj_ops["Excitation_Operators"])
+    n_atoms = length(proj_ops["RXG"])
     dim_b = 2^n_atoms
     H_ion = spzeros(dim_b,dim_b)
     for i in 1:n_atoms
@@ -60,7 +74,7 @@ function Hion(C4, pos_ops, proj_ops, save_location)
         d4 = abs.(diag(di_sq)).^-2
         d4_matrix = sparse(diagm(0 => d4))
         #d4_operator = SparseOperator(b_mb, b_mb, d4_matrix)
-        h_i = C4 * proj_ops["Projectors"][i].data * d4_matrix
+        h_i = C4 * proj_ops["RXR"][i].data * d4_matrix
         H_ion += h_i
     end
     save(save_location*"hion.jld2", "H_ion", H_ion)
@@ -83,13 +97,13 @@ function h_vdW_ij(i,j,C6,save_location)
     d6 = abs.(diag(dij_sq)).^-3
     #d6[d6.==Inf] .=1 #d6 must be a vector
     d6_matrix = spdiagm(0 => d6)
-    h_vdw_ij = C6 * sparse(proj_ops["Projectors"][j].data*proj_ops["Projectors"][i].data*d6_matrix) #Conversion to sparse matrix to save bytes
+    h_vdw_ij = C6 * sparse(proj_ops["RXR"][j].data*proj_ops["RXR"][i].data*d6_matrix) #Conversion to sparse matrix to save bytes
     return h_vdw_ij
 end
 
 function HvdW(C6, n_atoms, save_location)
     iter_vdW = Tuple{Int8,Int8}[]
-    #n_atoms = length(proj_ops["Excitation_Operators"])
+    #n_atoms = length(proj_ops["RXG"])
     for i in 1:n_atoms, j in i+1:n_atoms
         push!(iter_vdW, (i,j))
     end
