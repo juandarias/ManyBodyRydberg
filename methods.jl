@@ -6,7 +6,9 @@
 """
 module methods_cloud
 
-function PairGenerator(cloud, cutOff)
+export PairGenerator, RandomSelector, RandomSelectorIndex, CloudState, ResetGradient
+
+function PairGeneratorOld(cloud, cutOff)
     nAtoms = length(cloud)
     pairs = []
     for i in 1:nAtoms
@@ -21,6 +23,23 @@ function PairGenerator(cloud, cutOff)
     end
     return pairs   
 end
+
+function PairGenerator(cloud, cutOff)
+    nAtoms = length(cloud)
+    pairs = []
+    for i in 1:nAtoms
+        for j in i+1:nAtoms
+            pos_i = cloud[i].position
+            pos_j = cloud[j].position
+            distance_sq = (pos_i[1] - pos_j[1])^2 + (pos_i[2] - pos_j[2])^2 + (pos_i[3] - pos_j[3])^2
+            if distance_sq < cutOff^2
+                push!(pairs, (cloud[i].index, cloud[j].index))
+            end
+        end
+    end
+    return pairs   
+end
+
 
 function RandomSelectorOld(position_atoms, size_group)
     atomGroups = []
@@ -41,7 +60,6 @@ function RandomSelectorOld(position_atoms, size_group)
     end
     return subgroups
 end
-
 
 function RandomSelector(position_atoms, size_group)
     subgroups = []
@@ -64,7 +82,6 @@ function RandomSelector(position_atoms, size_group)
     return subgroups
 end
 
-
 function RandomSelectorIndex(position_atoms, size_group)
     subgroups = []
     global position = copy(position_atoms[:])
@@ -78,8 +95,8 @@ function RandomSelectorIndex(position_atoms, size_group)
             #subgroups[i,j,1] = atom_index
             #subgroups[i,j,2] = pos_atom[1]
             #subgroups[i,j,3] = pos_atom[2]
-            pos_index = append!([pos_atom], atom_index)
-            append!(subgroup, pos_index)
+            append!(pos_atom, atom_index)
+            append!(subgroup, [pos_atom])
             global position = deleteat!(position,idx)
         end
         push!(subgroups, subgroup)
@@ -87,50 +104,33 @@ function RandomSelectorIndex(position_atoms, size_group)
     return subgroups
 end
 
+function CloudState(atomGroups, test_location)
+    atomState, cloudState = [], []
+    numberGroups = length(atomGroups)
+    for i in 1:numberGroups #loop through groups
+        save_location = test_location*"_g"*string(i)*"_"
+        proj_ops = jldopen(save_location*"proj_ops.jld2", "r", mmaparrays=true)
+        psi_t = jldopen(save_location*"Psi_t.jld2", "r", mmaparrays=true)["psi_t"]
+        psi_f = last(psi_t)
+        subgroup = atomsGroups[i]
+        for j in 1:length(subgroup) #loop through atoms in group
+            #Rydberg probability amplitude
+            rjXrj = proj_ops["RXR"][j]
+            cr = expect(rjXrj, psi_f)
+            cg = (1-cr^2)^(0.5)
+            #Update state of atom in cloud
+            atomPos_Index = deepcopy(subgroup[j])
+            atomIndex = atomPos_Index[4]
+            cloud[atomIndex].state = [cg,cr]
+        end
+    end
 
+end
 
-
-function CalculatevdW(pair, cloud, topology)
-    C6 = topology.atomTypes["Li"].C6;
-    alpha = topology.atomTypes["Li"].alpha;
-
-    atom_i = cloud[pair[0]];
-    atom_j = cloud[pair[1]];
-    
-    pos_i = atom_i.position;
-    pos_j = atom_j.position;
-    distance_sq = (pos_i[1] - pos_j[1])^2 + (pos_i[2] - pos_j[2])^2 + (pos_i[3] - pos_j[3])^2;
-
-    probRyd_i = atom_i.state[1]^2;
-    probRyd_j = atom_j.state[1]^2;
-
-
-    #####
-    #Assignment of potential energy and forces. Potential energy is added to both atoms only if both are Rydberg, otherwise it will be added only to GS atom. Only if both atoms are in Rydberg state then the forces will be calculated
-
-    if probRyd_i!=0 && probRyd_j!=0
-        pot_energy_vdW = C6 * distance_sq^-3 * probRyd_i * probRyd_j;
-        atom_i.stark_shift += pot_energy_vdW;
-        atom_j.stark_shift += pot_energy_vdW;
-    elseif probRyd_i!=0
-        pot_energy_vdW = C6 * distance_sq^-3 * probRyd_i;
-        atom_j.stark_shift += pot_energy_vdW;
-    else
-        pot_energy_vdW = C6 * distance_sq^-3 * probRyd_j;
-        atom_i.stark_shift += pot_energy_vdW;
+function ResetGradient(cloud)
+    for atom in 1:length(cloud)
+        cloud[atom].gradient = [0.0, 0.0, 0.0]
     end
 end
-   
-function CalculateIonRydberg(atom, topology)
-    alpha = topology.atomTypes["Li"].alpha;
-    pos = atom.position
-    distance_sq = pos[1]^2 + pos[2]^2 + pos[3]^2
-    
-    prefactor = C_e/(4*pi*epsilon_0);
-    pot_energy_ion = -0.5 * alpha * prefactor^2 * distance_sq^-2;
-
-    atom.stark_shift += pot_energy_ion
-end
-
 
 end

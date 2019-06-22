@@ -14,16 +14,18 @@
 """
 module hamiltonian
 
+export Htotal
 
-using JLD2, FileIO
 using Distributed
-using DelimitedFiles
+using QuantumOptics, LinearAlgebra
+using JLD2, FileIO 
 using SparseArrays
-using LinearAlgebra
+
+using basis_operators
 
 
 ### Laser detuning
-function Hatom(Δ, proj_ops, save_location)
+function HatomOld(Δ::Float64, proj_ops, save_location::AbstractString)
     n_atoms = length(proj_ops["RXG"])
     dim_b = 2^n_atoms
     H_atom = spzeros(dim_b,dim_b)
@@ -36,7 +38,7 @@ end
 ### Laser detuning
 
 ### Laser detuning
-function HatomNew(Δ, proj_ops, save_location)
+function Hatom(Δ::Float64, proj_ops, save_location::AbstractString)
     n_atoms = length(proj_ops["RXG"])
     dim_b = 2^n_atoms
     H_atom = spzeros(dim_b,dim_b)
@@ -50,7 +52,7 @@ end
 
 
 ### Population transfer
-function Hrabi(Ω, proj_ops, save_location)
+function Hrabi(Ω::Float64, proj_ops, save_location::AbstractString)
     n_atoms = length(proj_ops["RXG"])
     dim_b = 2^n_atoms
     H_rabi = spzeros(dim_b,dim_b)
@@ -64,7 +66,7 @@ end
 
 
 ### Ion-Rydberg
-function Hion(C4, pos_ops, proj_ops, save_location)
+function Hion(C4::Float64, pos_ops, proj_ops, save_location::AbstractString)
     n_atoms = length(proj_ops["RXG"])
     dim_b = 2^n_atoms
     H_ion = spzeros(dim_b,dim_b)
@@ -83,7 +85,7 @@ end
 
 
 ### vdW Interaction
-function h_vdW_ij(i,j,C6,save_location)
+function h_vdW_ij(i::Int8, j::Int8, C6::Float64, save_location::AbstractString)
     pos_ops = jldopen(save_location*"pos_ops.jld2", "r", mmaparrays=true)
     proj_ops = jldopen(save_location*"proj_ops.jld2", "r", mmaparrays=true)
     dx_sq= (pos_ops["Position_x"][i].data - pos_ops["Position_x"][j].data).^2
@@ -101,7 +103,7 @@ function h_vdW_ij(i,j,C6,save_location)
     return h_vdw_ij
 end
 
-function HvdW(C6, n_atoms, save_location)
+function HvdW(C6::Float64, n_atoms::Int64, save_location::AbstractString)
     iter_vdW = Tuple{Int8,Int8}[]
     #n_atoms = length(proj_ops["RXG"])
     for i in 1:n_atoms, j in i+1:n_atoms
@@ -117,8 +119,68 @@ end
 
 ### vdW Interaction
 
+
+function Htotal(atoms_positions::Array{Any,1}, topology, save_location::AbstractString, withvdW = true)
+
+    ### Read topology
+    n_atoms = length(atoms_positions)
+    laserRyd = topology.laserTypes["laserRyd"]
+    atomRyd = topology.atomTypes["atomRyd"]
+        
+    ### Prepare basis and operators
+    b_mb, posopx, posopy, posopz = basis_operators.ManyBodyBasis(atoms_positions, save_location);
+    basis_operators.PositionOperators(b_mb, posopx, posopy, posopz, save_location);
+    basis_operators.ProjectionOperators(b_mb, save_location);
+    
+    sleep(5)
+    pos_ops = jldopen(save_location*"pos_ops.jld2", "r", mmaparrays=true)
+    proj_ops = jldopen(save_location*"proj_ops.jld2", "r", mmaparrays=true)
+    
+
+    ### Prepare Hamiltonian
+    hamiltonian.Hatom(laserRyd.Δ , proj_ops, save_location);
+    hamiltonian.Hrabi(laserRyd.Ω, proj_ops, save_location);
+    hamiltonian.Hion(atomRyd.C4, pos_ops, proj_ops, save_location);
+    if withvdW == true 
+        hamiltonian.HvdW(atomRyd.C6, n_atoms, save_location);
+    end
+
+
+    #Open JLD files with output of Hamiltonians
+    fatom = jldopen(save_location*"hatom.jld2", mmaparrays=true)
+    fion = jldopen(save_location*"hion.jld2", mmaparrays=true)
+    frabi = jldopen(save_location*"hrabi.jld2", mmaparrays=true)
+    if withvdW == true 
+        fvdW = jldopen(save_location*"hvdW.jld2", mmaparrays=true)
+    end
+    
+    
+    #Generate empty sparse array for Hamiltonian, save to disk and empty allocation
+    dim_b = length(b_mb)
+    H_total_0 = spzeros(dim_b,dim_b)
+    save(save_location*"htotal_0.jld2", "H_total", H_total_0)
+    
+
+    #Create Hamiltonian
+    ftotal = jldopen(save_location*"htotal_0.jld2", mmaparrays=true)
+    ftotal["H_total"] .+= fatom["H_atom"]
+    ftotal["H_total"] .+= fion["H_ion"]
+    ftotal["H_total"] .+= frabi["H_rabi"]
+    if withvdW == true 
+        ftotal["H_total"] .+= fvdW["H_vdW"]
+    end
+    
+    #Save Hamiltonian
+    save(save_location*"htotal.jld2", "H_total", ftotal["H_total"])
+    close(fatom), close(frabi), close(fion), close(fvdW)
+    H_total = SparseOperator(b_mb,b_mb, ftotal["H_total"])
+    return H_total
+end
+
+
+
 ### Full Hamiltonian
-function Htotal(save_location)
+function HtotalOld(save_location)
     
     #Open JLD files
     fatom = jldopen(save_location*"hatom.jld2", mmaparrays=true)
@@ -134,7 +196,7 @@ function Htotal(save_location)
     H_total_0 = nothing
 
 
-    #Create Hamiltomnian
+    #Create Hamiltonian
     ftotal = jldopen(save_location*"htotal_0.jld2", mmaparrays=true)
     ftotal["H_total"] .+= fatom["H_atom"]
     ftotal["H_total"] .+= fion["H_ion"]
@@ -149,7 +211,7 @@ end
 
 
 ### Hamiltonian no vdW
-function HtotalnovdW(save_location)
+function HtotalnovdWOld(save_location)
     
     #Open JLD files
     fatom = jldopen(save_location*"hatom.jld2", mmaparrays=true)
@@ -177,6 +239,5 @@ function HtotalnovdW(save_location)
     return ftotal["H_total"]
 end
 ### Hamiltonian no vdW
-
 
 end
