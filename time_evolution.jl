@@ -6,12 +6,14 @@
 # -review gaussian wavepackage definition in Trotter propagation
 # -define types for arguments of functions
 # -distribute Newtonian propagation
+# -appearently there is some version compatibility issue. DifferentialEquations v6.2.0 and OrdinaryDiffEq v5.3.0 work fine!
 """
 module time_evolution
 
-export TDSE, MCWFM, NewtonPropagation, testfun
+export TDSE, MCWFM, NewtonPropagation
 
 ### Julia modules
+using DifferentialEquations
 using Distributed
 using QuantumOptics
 using JLD2, FileIO
@@ -19,9 +21,7 @@ using JLD2, FileIO
 
 #using .topology,.hamiltonian,.basis_operators,.methods_cloud
 
-function testfun(number)
-    println(number)
-end
+
 
 function JumpOperators(topology, proj_ops)
     Jmp, Γ = [], []
@@ -34,7 +34,7 @@ function JumpOperators(topology, proj_ops)
     Γ_1 = Γeff
 
     ### Dephasing rates
-    γint = 9e4 #Scattering from intermediate state
+    γint = 0 #Scattering from intermediate state, assumed 0 due to high intermediate detuning
     γFT = 1/laserRyd.pulse_length #Fourier broadening due to laser pulse length
     γ_1 = laserRyd.bandwidth + γFT + γint #Dephasing: convolution of two Lorentzians, whose width is equal to the sum of individual widths
              
@@ -52,97 +52,157 @@ function JumpOperators(topology, proj_ops)
     return Jmp, Γ
 end
 
-function MCWFM(H_total, tfinal, save_location::AbstractString; n_trajectories=1000)
+function MCWFM(H_total, topology, tfinal, save_location::AbstractString; n_trajectories=1000, steps =10, kwargs...)
     
     ### Decay and decoherence operators
     proj_ops = jldopen(save_location*"proj_ops.jld2", "r", mmaparrays=true)
     Jmp, Γ = JumpOperators(topology, proj_ops) #Update function definition to use topology data
 
     ### Prepare MCWFM
-    tstep = tfinal/10
+    tstep = tfinal/steps
     T = [0:tstep:tfinal;]
-
+    
     ### Run MCWFM
     b_mb = basis(H_total)
     psi0 = basisstate(b_mb,1)
-    psi_t = @distributed (+) for i in 1:n_trajectories
-        timeevolution.mcwf(T, psi0, H_total, Jmp; rates=Γ, seed=UInt(i))[2]
+    
+    try
+        psi_t = @distributed (+) for i in 1:n_trajectories
+            timeevolution.mcwf(T, psi0, H_total, Jmp; rates=Γ, kwargs...)[2]
+        end
+    
+        psi_t /= n_trajectories
+        @save save_location*"Psi_t.jld2" psi_t
+        cp(save_location*"Psi_t.jld2", save_location*"Psi_t.out.jld2", force=true)#Solution for issue https://github.com/JuliaIO/JLD2.jl/issues/55   
+    catch error
+        println("Propagation failed:", error)
+        try
+            psi_t = @distributed (+) for i in 1:n_trajectories
+            timeevolution.mcwf(T, psi0, H_total, Jmp; rates=Γ, alg=Vern7(), kwargs...)[2]
+            end
+            psi_t /= n_trajectories
+            @save save_location*"Psi_t.jld2" psi_t
+            cp(save_location*"Psi_t.jld2", save_location*"Psi_t.out.jld2", force=true)
+        catch error
+            println("Propagation failed:", error)
+        end
     end
 
-    psi_t /= n_trajectories
-
-    @save save_location*"Psi_t.jld2" psi_t
-    cp(save_location*"Psi_t.jld2", save_location*"Psi_t.out.jld2", force=true) # 
-    #Solution for issue https://github.com/JuliaIO/JLD2.jl/issues/55    
 end
 
 
 
-function MCWFM(H_total, tfinal, initial_state::Array{Complex{Float64},1}, save_location::AbstractString; n_trajectories=1000)
+function MCWFM(H_total, topology, tfinal, initial_state::Array{Complex{Float64},1}, save_location::AbstractString; n_trajectories=1000, steps =10, kwargs...)
     
     ### Decay and decoherence operators
     proj_ops = jldopen(save_location*"proj_ops.jld2", "r", mmaparrays=true)
     Jmp, Γ = JumpOperators(topology, proj_ops) #Update function definition to use topology data
 
     ### Prepare MCWFM
-    tstep = tfinal/10
+    tstep = tfinal/steps
     T = [0:tstep:tfinal;]
 
     ### Run MCWFM
     b_mb = basis(H_total)
     psi0 = Ket(b_mb, initial_state)
-    psi_t = @distributed (+) for i in 1:n_trajectories
-        timeevolution.mcwf(T, psi0, H_total, Jmp; rates=Γ, seed=UInt(i))[2]
+    
+    try
+        psi_t = @distributed (+) for i in 1:n_trajectories
+            timeevolution.mcwf(T, psi0, H_total, Jmp; rates=Γ, kwargs...)[2]
+        end
+    
+        psi_t /= n_trajectories
+        @save save_location*"Psi_t.jld2" psi_t
+        cp(save_location*"Psi_t.jld2", save_location*"Psi_t.out.jld2", force=true)#Solution for issue https://github.com/JuliaIO/JLD2.jl/issues/55   
+    catch error
+        println("Propagation failed:", error)
+        try
+            psi_t = @distributed (+) for i in 1:n_trajectories
+            timeevolution.mcwf(T, psi0, H_total, Jmp; rates=Γ, alg=Vern7(), kwargs...)[2]
+            end
+            psi_t /= n_trajectories
+            @save save_location*"Psi_t.jld2" psi_t
+            cp(save_location*"Psi_t.jld2", save_location*"Psi_t.out.jld2", force=true)
+        catch error
+            println("Propagation failed:", error)
+        end
     end
 
-    psi_t /= n_trajectories
-
-    @save save_location*"Psi_t.jld2" psi_t
-    cp(save_location*"Psi_t.jld2", save_location*"Psi_t.out.jld2", force=true) # 
-    #Solution for issue https://github.com/JuliaIO/JLD2.jl/issues/55    
 end
 
 
 
-function TDSE(H_total, tfinal::Float64, save_location::AbstractString, iters=1e6)
+function TDSE(H_total, tfinal::Float64, save_location::AbstractString; steps =10, kwargs... )
     
 
     ### Prepare TDSE
     #tfinal, tstep = laserRyd.pulse_length, laserRyd.pulse_length/10
-    tstep = tfinal/10
+    tstep = tfinal/steps
     T = [0:tstep:tfinal;]
     #n_trajectories = trajectories
 
     ### Solve TDSE
     b_mb = basis(H_total)
     psi0 = basisstate(b_mb,1)
-    psi_t = timeevolution.schroedinger(T, psi0, H_total, maxiters=iters)[2]
+    
+    try
+        psi_t = timeevolution.schroedinger(T, psi0, H_total; kwargs...)[2]
 
-    @save save_location*"Psi_t.jld2" psi_t
-    cp(save_location*"Psi_t.jld2", save_location*"Psi_t.out.jld2", force=true)
-    sleep(5) # 
-    #Solution for issue https://github.com/JuliaIO/JLD2.jl/issues/55    
+        @save save_location*"Psi_t.jld2" psi_t
+        cp(save_location*"Psi_t.jld2", save_location*"Psi_t.out.jld2", force=true)
+        sleep(5) # 
+        #Solution for issue https://github.com/JuliaIO/JLD2.jl/issues/55    
+    catch error
+        println("Propagation failed:", error)
+        try
+            psi_t = timeevolution.schroedinger(T, psi0, H_total; alg=Vern7(), kwargs...)[2]
+            @save save_location*"Psi_t.jld2" psi_t
+            cp(save_location*"Psi_t.jld2", save_location*"Psi_t.out.jld2", force=true)
+            sleep(5) #
+        catch error 
+            println("Propagation failed:", error)
+        end
+    end
+
+
+    
 end
 
 
-function TDSE(H_total, tfinal::Float64, initial_state::Array{Complex{Float64},1}, save_location::AbstractString, iters=1e6)
+function TDSE(H_total, tfinal::Float64, initial_state::Array{Complex{Float64},1}, save_location::AbstractString; steps=10, kwargs...)
     
 
     ### Prepare TDSE
     #tfinal, tstep = laserRyd.pulse_length, laserRyd.pulse_length/10
-    tstep = tfinal/10
+    tstep = tfinal/steps
     T = [0:tstep:tfinal;]
     #n_trajectories = trajectories
 
     ### Solve TDSE
     b_mb = basis(H_total)
     psi0 = Ket(b_mb, initial_state)
-    psi_t = timeevolution.schroedinger(T, psi0, H_total, maxiters=iters)[2]
+    
+    try
+        psi_t = timeevolution.schroedinger(T, psi0, H_total; kwargs...)[2]
 
-    @save save_location*"Psi_t.jld2" psi_t
-    cp(save_location*"Psi_t.jld2", save_location*"Psi_t.out.jld2", force=true)
-    sleep(5) # 
-    #Solution for issue https://github.com/JuliaIO/JLD2.jl/issues/55    
+        @save save_location*"Psi_t.jld2" psi_t
+        cp(save_location*"Psi_t.jld2", save_location*"Psi_t.out.jld2", force=true)
+        sleep(5) # 
+        #Solution for issue https://github.com/JuliaIO/JLD2.jl/issues/55  
+    catch error
+        println("Propagation failed:", error)
+        try
+            psi_t = timeevolution.schroedinger(T, psi0, H_total; alg=Vern7(), kwargs...)[2]
+            @save save_location*"Psi_t.jld2" psi_t
+            cp(save_location*"Psi_t.jld2", save_location*"Psi_t.out.jld2", force=true)
+            sleep(5) #
+        catch error 
+            println("Propagation failed:", error)
+        end
+    end
+
+
+  
 end
 
 

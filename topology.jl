@@ -8,7 +8,7 @@ module topology
 using constants
 using Distributions: MvNormal, rand!
 
-export AtomType, LaserType, TrapType, AtomCloudSphere, AtomCloud, AtomCloud2D, AtomCloud1D, Topologies
+export AtomType, LaserType, TrapType, AtomCloudSphere, AtomCloud2DSquare, AtomCloud, AtomCloud2D, AtomCloud1D, Topologies
 
 mutable struct Atom
     name
@@ -113,6 +113,31 @@ struct AtomCloudSphere
 end
 
 
+struct AtomCloud2DSquare
+    density::Float64
+    size::Float64
+    cloud::Array{Atom}
+    function AtomCloud2DSquare(size::Float64, density::Float64)
+        size = size*1e-6
+        L = density^(-1/2) #Spacing between atoms
+        nAtoms = size^2 * density
+        nAtomsroot = trunc(Int, nAtoms^(1/2)) 
+        ### Generate coordinates of atoms in cube
+        atomsPosSquare = [[x*L + L*rand(1)[1], y*L + L*rand(1)[1], 0] for x in -ceil(nAtomsroot/2):ceil(nAtomsroot/2), y in -ceil(nAtomsroot/2):ceil(nAtomsroot/2)]
+        ### Generating cloud of ground state atoms
+        initial_state = [1.0, 0.0] #Ground state
+        initial_velocity = [0.0, 0.0, 0.0]
+        initial_acceleration = [0.0, 0.0, 0.0]
+        initial_shift = 0.0
+        name = "Li" 
+        cloud = [Atom(name, i, initial_state, atomsPosSquare[i], initial_velocity, initial_acceleration, initial_shift) for i in 1:length(atomsPosSquare)]
+        return cloud, atomsPosSquare
+    end
+end
+
+
+
+
 function AtomCloud2D(size::Float64, density::Float64) #density in atoms/m^3 and size in mum
     size = size*1e-6
     L = density^(-1/2) #Spacing between atoms
@@ -136,7 +161,7 @@ function AtomCloud1D(size::Float64, density::Float64) #density in atoms/m^3 and 
     L = 1/density #Spacing between atoms
     nAtoms = trunc(Int, size * density)
     ### Generate coordinates of atoms
-    atomPos = [[x*L + L*rand(1)[1], 0, 0] for x in 1:floor(nAtoms)]
+    atomPos = [[x*L + L*rand(1)[1], 0, 0] for x in -floor(nAtoms)/2:floor(nAtoms)/2]
     ### Generating cloud of ground state atoms
     initial_state = [1.0, 0.0] #Ground state
     initial_velocity = [0.0, 0.0, 0.0]
