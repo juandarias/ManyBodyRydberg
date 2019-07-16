@@ -73,7 +73,7 @@ function MCWFM(H_total, topology, tfinal, save_location::AbstractString; n_traje
     
         psi_t /= n_trajectories
         @save save_location*"Psi_t.jld2" psi_t
-        cp(save_location*"Psi_t.jld2", save_location*"Psi_t.out.jld2", force=true)#Solution for issue https://github.com/JuliaIO/JLD2.jl/issues/55   
+        #cp(save_location*"Psi_t.jld2", save_location*"Psi_t.out.jld2", force=true)#Solution for issue https://github.com/JuliaIO/JLD2.jl/issues/55   
     catch error
         println("Propagation failed:", error)
         try
@@ -82,7 +82,7 @@ function MCWFM(H_total, topology, tfinal, save_location::AbstractString; n_traje
             end
             psi_t /= n_trajectories
             @save save_location*"Psi_t.jld2" psi_t
-            cp(save_location*"Psi_t.jld2", save_location*"Psi_t.out.jld2", force=true)
+            #cp(save_location*"Psi_t.jld2", save_location*"Psi_t.out.jld2", force=true)
         catch error
             println("Propagation failed:", error)
         end
@@ -113,7 +113,7 @@ function MCWFM(H_total, topology, tfinal, initial_state::Array{Complex{Float64},
     
         psi_t /= n_trajectories
         @save save_location*"Psi_t.jld2" psi_t
-        cp(save_location*"Psi_t.jld2", save_location*"Psi_t.out.jld2", force=true)#Solution for issue https://github.com/JuliaIO/JLD2.jl/issues/55   
+        #cp(save_location*"Psi_t.jld2", save_location*"Psi_t.out.jld2", force=true)#Solution for issue https://github.com/JuliaIO/JLD2.jl/issues/55   
     catch error
         println("Propagation failed:", error)
         try
@@ -122,7 +122,7 @@ function MCWFM(H_total, topology, tfinal, initial_state::Array{Complex{Float64},
             end
             psi_t /= n_trajectories
             @save save_location*"Psi_t.jld2" psi_t
-            cp(save_location*"Psi_t.jld2", save_location*"Psi_t.out.jld2", force=true)
+            #cp(save_location*"Psi_t.jld2", save_location*"Psi_t.out.jld2", force=true)
         catch error
             println("Propagation failed:", error)
         end
@@ -149,7 +149,7 @@ function TDSE(H_total, tfinal::Float64, save_location::AbstractString; steps =10
         psi_t = timeevolution.schroedinger(T, psi0, H_total; kwargs...)[2]
 
         @save save_location*"Psi_t.jld2" psi_t
-        cp(save_location*"Psi_t.jld2", save_location*"Psi_t.out.jld2", force=true)
+        #cp(save_location*"Psi_t.jld2", save_location*"Psi_t.out.jld2", force=true)
         sleep(5) # 
         #Solution for issue https://github.com/JuliaIO/JLD2.jl/issues/55    
     catch error
@@ -157,7 +157,7 @@ function TDSE(H_total, tfinal::Float64, save_location::AbstractString; steps =10
         try
             psi_t = timeevolution.schroedinger(T, psi0, H_total; alg=Vern7(), kwargs...)[2]
             @save save_location*"Psi_t.jld2" psi_t
-            cp(save_location*"Psi_t.jld2", save_location*"Psi_t.out.jld2", force=true)
+            #cp(save_location*"Psi_t.jld2", save_location*"Psi_t.out.jld2", force=true)
             sleep(5) #
         catch error 
             println("Propagation failed:", error)
@@ -186,7 +186,7 @@ function TDSE(H_total, tfinal::Float64, initial_state::Array{Complex{Float64},1}
         psi_t = timeevolution.schroedinger(T, psi0, H_total; kwargs...)[2]
 
         @save save_location*"Psi_t.jld2" psi_t
-        cp(save_location*"Psi_t.jld2", save_location*"Psi_t.out.jld2", force=true)
+        #cp(save_location*"Psi_t.jld2", save_location*"Psi_t.out.jld2", force=true)
         sleep(5) # 
         #Solution for issue https://github.com/JuliaIO/JLD2.jl/issues/55  
     catch error
@@ -194,7 +194,7 @@ function TDSE(H_total, tfinal::Float64, initial_state::Array{Complex{Float64},1}
         try
             psi_t = timeevolution.schroedinger(T, psi0, H_total; alg=Vern7(), kwargs...)[2]
             @save save_location*"Psi_t.jld2" psi_t
-            cp(save_location*"Psi_t.jld2", save_location*"Psi_t.out.jld2", force=true)
+            #cp(save_location*"Psi_t.jld2", save_location*"Psi_t.out.jld2", force=true)
             sleep(5) #
         catch error 
             println("Propagation failed:", error)

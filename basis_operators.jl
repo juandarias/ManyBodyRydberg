@@ -48,7 +48,7 @@ function ManyBodyBasis(positions, save_location)
         end
     end
     @save save_location*"many_body_basis.jld2" b_mb
-    cp(save_location*"many_body_basis.jld2", save_location*"many_body_basis.out.jld2", force=true)
+    #cp(save_location*"many_body_basis.jld2", save_location*"many_body_basis.out.jld2", force=true)
     return b_mb, Basis_Positions_x, Basis_Positions_y, Basis_Positions_z
 end
 
@@ -64,7 +64,7 @@ function PositionOperators(many_body_basis, Basis_Positions_x, Basis_Positions_y
         push!(Position_z, zi)
     end
     @save save_location*"pos_ops.jld2" Position_x Position_y Position_z
-    cp(save_location*"pos_ops.jld2", save_location*"pos_ops.out.jld2", force=true) #Solution for issue https://github.com/JuliaIO/JLD2.jl/issues/55
+    #cp(save_location*"pos_ops.jld2", save_location*"pos_ops.out.jld2", force=true) #Solution for issue https://github.com/JuliaIO/JLD2.jl/issues/55
     #pos_ops = jldopen(folder*testname*"pos_ops.jld2", "r", mmaparrays=true) 
     #return pos_ops
 end
@@ -91,7 +91,7 @@ function ProjectionOperators(many_body_basis, save_location)
         push!(GXR, sparse(giXei))
     end
     @save save_location*"proj_ops.jld2" RXR GXG RXG GXR
-    cp(save_location*"proj_ops.jld2", save_location*"proj_ops.out.jld2", force=true) #Solution for issue https://github.com/JuliaIO/JLD2.jl/issues/55
+    #cp(save_location*"proj_ops.jld2", save_location*"proj_ops.out.jld2", force=true) #Solution for issue https://github.com/JuliaIO/JLD2.jl/issues/55
     #proj_ops = jldopen(folder*testname*"proj_ops.jld2", "r", mmaparrays=true) 
     #return proj_ops
 end
