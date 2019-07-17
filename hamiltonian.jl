@@ -177,7 +177,7 @@ end
 ### vdW Interaction
 
 
-function Htotal(atoms_positions::Array{Any,1}, topology, time_simulation::Float64, save_location::AbstractString, withvdW = true, withPT = false)
+function Htotal(atoms_positions::Array{Any,1}, topology, time_simulation::Float64, save_location::AbstractString, withvdW = true, withPT = false, laseroff = false)
 
     ### Read topology
     n_atoms = length(atoms_positions)
@@ -195,8 +195,10 @@ function Htotal(atoms_positions::Array{Any,1}, topology, time_simulation::Float6
     
 
     ### Prepare Hamiltonian
-    hamiltonian.Hatom(laserRyd.Δ , proj_ops, save_location);
-    hamiltonian.Hrabi(laserRyd.Ω, proj_ops, save_location);
+    if laseroff == false
+        hamiltonian.Hatom(laserRyd.Δ , proj_ops, save_location);
+        hamiltonian.Hrabi(laserRyd.Ω, proj_ops, save_location);
+    end
 
     if withPT == true
         hamiltonian.HPTIon(topology, atoms_positions, proj_ops, time_simulation, save_location);
@@ -210,8 +212,10 @@ function Htotal(atoms_positions::Array{Any,1}, topology, time_simulation::Float6
 
 
     #Open JLD files with output of Hamiltonians
-    fatom = jldopen(save_location*"hatom.jld2", mmaparrays=true)
-    frabi = jldopen(save_location*"hrabi.jld2", mmaparrays=true)
+    if laseroff = false
+        fatom = jldopen(save_location*"hatom.jld2", mmaparrays=true)
+        frabi = jldopen(save_location*"hrabi.jld2", mmaparrays=true)
+    end
     
     if withPT == true
         fption = jldopen(save_location*"hption.jld2", mmaparrays=true)
@@ -232,15 +236,17 @@ function Htotal(atoms_positions::Array{Any,1}, topology, time_simulation::Float6
 
     #Create Hamiltonian
     ftotal = jldopen(save_location*"htotal_0.jld2", mmaparrays=true)
-    ftotal["H_total"] .+= fatom["H_atom"]
-    ftotal["H_total"] .+= frabi["H_rabi"]
+    
+    if laseroff = false
+        ftotal["H_total"] .+= fatom["H_atom"]
+        ftotal["H_total"] .+= frabi["H_rabi"]
+    end
     
     if withPT == true
         ftotal["H_total"] .+= fption["H_PTIon"] 
     else
         ftotal["H_total"] .+= fion["H_ion"] 
     end
-
 
     if withvdW == true 
         ftotal["H_total"] .+= fvdW["H_vdW"]
@@ -251,6 +257,10 @@ function Htotal(atoms_positions::Array{Any,1}, topology, time_simulation::Float6
     #Save Hamiltonian and close files
     save(save_location*"htotal.jld2", "H_total", ftotal["H_total"])
     
+    if laseroff = false
+        close(fatom), close(frabi)
+    end
+        
     if withPT == true
         close(fption)
     else
@@ -260,12 +270,14 @@ function Htotal(atoms_positions::Array{Any,1}, topology, time_simulation::Float6
     if withvdW == true
         close(fvdW)
     end
-    close(fatom), close(frabi), close(ftotal)
+    
+    close(ftotal)
+    
     return H_total
 end
 
 
-function Hdark(atoms_positions::Array{Any,1}, topology, time_simulation::Float64, save_location::AbstractString, withvdW = true, withPT = false)
+function HdarkOld(atoms_positions::Array{Any,1}, topology, time_simulation::Float64, save_location::AbstractString, withvdW = true, withPT = false)
 
     ### Read topology
     n_atoms = length(atoms_positions)
