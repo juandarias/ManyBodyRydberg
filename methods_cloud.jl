@@ -9,7 +9,7 @@ module methods_cloud
 
 using Distributed, QuantumOptics, JLD2, FileIO
 
-export PairGenerator, RandomSelector, RandomSelectorIndex, CloudState
+export PairGenerator, RandomSelector, RandomSelectorIndex, CloudState, UpdateAtomsGroups
 
 function PairGenerator(cloud, cutOff)
     nAtoms = length(cloud)
