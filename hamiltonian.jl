@@ -56,7 +56,7 @@ function Hatom(Δ::Float64, proj_ops, save_location::AbstractString)
         h_ai = 0.5 * Δ * (proj_ops["RXR"][i].data - proj_ops["GXG"][i].data)
         H_atom += h_ai #TODO: is global needed
     end
-    save(save_location*"hatom.jld2", "H_atom", H_atom)
+    return H_atom
 end
 ### Laser detuning
 
@@ -70,7 +70,7 @@ function Hrabi(Ω::Float64, proj_ops, save_location::AbstractString)
         h_r = Ω * (proj_ops["RXG"][i].data + proj_ops["GXR"][i].data)
         H_rabi += h_r
     end
-    save(save_location*"hrabi.jld2", "H_rabi", H_rabi)
+    return H_rabi
 end
 ### Population transfer
 
@@ -91,7 +91,7 @@ function Hion(C4::Float64, atoms_positions, proj_ops, save_location::AbstractStr
         h_i = C4 * proj_ops["RXR"][i].data * d4_matrix
         H_ion += h_i
     end
-    save(save_location*"hion.jld2", "H_ion", H_ion)
+    return H_ion
 end
 ### Ion-Rydberg
 
@@ -133,7 +133,7 @@ function HPTIon(topology, atoms_positions, proj_ops, time_simulation::Float64, s
         H_ipt = -1/2*α*Etot_sq*proj_ops["RXR"][i].data;
         H_PTIon += H_ipt
     end
-    save(save_location*"hption.jld2", "H_PTIon", H_PTIon)
+    return H_PTIon
 end
 ### Paul trap +alphaon
 
@@ -171,7 +171,7 @@ function HvdW(C6::Float64, atoms_positions, save_location::AbstractString)
     H_vdW = @distributed (+) for (i,j) in iter_vdW
         hamiltonian.h_vdW_ij(i,j, C6, atoms_positions, save_location)
     end
-    save(save_location*"hvdW.jld2", "H_vdW", H_vdW)
+    return H_vdW
 end
 
 ### vdW Interaction
@@ -196,38 +196,20 @@ function Htotal(atoms_positions::Array{Any,1}, topology, time_simulation::Float6
 
     ### Prepare Hamiltonian
     if laseroff == false
-        hamiltonian.Hatom(laserRyd.Δ , proj_ops, save_location);
-        hamiltonian.Hrabi(laserRyd.Ω, proj_ops, save_location);
+        H_atom = hamiltonian.Hatom(laserRyd.Δ , proj_ops, save_location);
+        H_rabi = hamiltonian.Hrabi(laserRyd.Ω, proj_ops, save_location);
     end
 
     if withPT == true
-        hamiltonian.HPTIon(topology, atoms_positions, proj_ops, time_simulation, save_location);
+        H_PTion = hamiltonian.HPTIon(topology, atoms_positions, proj_ops, time_simulation, save_location);
     else
-        hamiltonian.Hion(atomRyd.C4, atoms_positions, proj_ops, save_location);
+        H_ion = hamiltonian.Hion(atomRyd.C4, atoms_positions, proj_ops, save_location);
     end
     
     if withvdW == true 
-        hamiltonian.HvdW(atomRyd.C6, atoms_positions, save_location);
+        H_vdW = hamiltonian.HvdW(atomRyd.C6, atoms_positions, save_location);
     end
 
-
-    #Open JLD files with output of Hamiltonians
-    if laseroff = false
-        fatom = jldopen(save_location*"hatom.jld2", mmaparrays=true)
-        frabi = jldopen(save_location*"hrabi.jld2", mmaparrays=true)
-    end
-    
-    if withPT == true
-        fption = jldopen(save_location*"hption.jld2", mmaparrays=true)
-    else
-        fion = jldopen(save_location*"hion.jld2", mmaparrays=true)
-    end
-
-    if withvdW == true
-        fvdW = jldopen(save_location*"hvdW.jld2", mmaparrays=true)
-    end
-    
-    
     #Generate empty sparse array for Hamiltonian, save to disk and empty allocation
     dim_b = length(b_mb)
     H_total_0 = spzeros(dim_b,dim_b)
@@ -237,40 +219,25 @@ function Htotal(atoms_positions::Array{Any,1}, topology, time_simulation::Float6
     #Create Hamiltonian
     ftotal = jldopen(save_location*"htotal_0.jld2", mmaparrays=true)
     
-    if laseroff = false
-        ftotal["H_total"] .+= fatom["H_atom"]
-        ftotal["H_total"] .+= frabi["H_rabi"]
+    if laseroff == false
+        ftotal["H_total"] .+= H_atom
+        ftotal["H_total"] .+= H_rabi
     end
     
     if withPT == true
-        ftotal["H_total"] .+= fption["H_PTIon"] 
+        ftotal["H_total"] .+= H_PTion 
     else
-        ftotal["H_total"] .+= fion["H_ion"] 
+        ftotal["H_total"] .+= H_ion
     end
 
     if withvdW == true 
-        ftotal["H_total"] .+= fvdW["H_vdW"]
+        ftotal["H_total"] .+= H_vdW
     end
     
     H_total = SparseOperator(b_mb,b_mb, ftotal["H_total"])
     
     #Save Hamiltonian and close files
     save(save_location*"htotal.jld2", "H_total", ftotal["H_total"])
-    
-    if laseroff = false
-        close(fatom), close(frabi)
-    end
-        
-    if withPT == true
-        close(fption)
-    else
-        close(fion)
-    end
-    
-    if withvdW == true
-        close(fvdW)
-    end
-    
     close(ftotal)
     
     return H_total

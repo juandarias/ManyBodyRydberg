@@ -3,6 +3,7 @@
 * - separate code for calculation of operators from time evolution
 * - clean-up kwargs. See https://medium.com/@Jernfrost/function-arguments-in-julia-and-python-9865fb88c697
 * - move observables to another module
+* - clean-up while loops of LeapFrogIntegratorDark
 * --------------------------------------------------------------
 * NOTES:
 * - The variable step Leap-Frog algorithm is based on 'kick-drift-kick' variant form. https://en.wikipedia.org/wiki/Leapfrog_integration and https://arxiv.org/pdf/astro-ph/9710043.pdf or https://www.unige.ch/~hairer/poly_geoint/week2.pdf or http://www.mcmchandbook.net/HandbookChapter5.pdf
@@ -52,18 +53,18 @@ using hamiltonian, methods_cloud, electrostatics, time_evolution
         ElectronicPropagation(topology, atomsGroups, time_simulation, time_step, step, test_location; kwargs...) #I am introducing an error here by integrating for a time_step
         AccelerationAtoms(cloud, pairs_atoms, topology, time_simulation)
         status = open("simulation_status.out", "a+")
-        println(status, "System time, Simulation time (mus), Collisions, Kinetic energy, Potential energy")
+        println(status, "System time, Simulation time (mus), Collisions, Potential energy, Kinetic energy")
         close(status)
 
         ### Step n>1
         while time_simulation < tfinal
             step += 1
             @save test_location*"step"*string(step)*"_cloud.jld2" cloud
-            LeapFrogStep(cloud, topology, atomsGroups, pairs_atoms, time_simulation, time_step, step, test_location; kwargs...)
+            time_step = LeapFrogStep(cloud, topology, atomsGroups, pairs_atoms, time_simulation, time_step, step, test_location; kwargs...)
             if mod(step, refresh_rate) == 0
                 pairs_atoms = PairGenerator(cloud, cutOff)
             end
-            collisions = CollisionCounter(cloud, time_simulation)
+            collisions = CollisionCounter(cloud)
             CloudState(atomsGroups, cloud, step, test_location)
             energy = PotentialEnergy(cloud, topology, pairs_atoms, time_simulation; kwargs...)
             time_simulation += time_step
@@ -104,13 +105,15 @@ using hamiltonian, methods_cloud, electrostatics, time_evolution
             if mod(step, refresh_rate) == 0
                 pairs_atoms = PairGenerator(cloud, cutOff)
             end
-            LeapFrogStep(cloud, topology, atomsGroups, pairs_atoms, time_simulation, time_step, step, test_location; mcwfm = false, kwargs...)
+            time_step = LeapFrogStep(cloud, topology, atomsGroups, pairs_atoms, time_simulation, time_step, step, test_location; mcwfm = false, kwargs...) #returns size of timestep used in LF
+            ### Updates states, energy and time of simulations
             CloudState(atomsGroups, cloud, step, test_location)
-            collisions = CollisionCounter(cloud, time_simulation)
+            collisions = CollisionCounter(cloud)
             energy = PotentialEnergy(cloud, topology, pairs_atoms, time_simulation; kwargs...)
             time_simulation += time_step
             ### Status output and conclusion of simulation
-            ExportStatus(time_simulation, collisions, energy)
+            ExportStatus(time_simulation, collisions, energy, test_location)
+            CleanUpOutput(atomsGroups, step, test_location)
             collisions != 0 && break
         end
 
@@ -121,13 +124,15 @@ using hamiltonian, methods_cloud, electrostatics, time_evolution
             if mod(step, refresh_rate) == 0
                 pairs_atoms = PairGenerator(cloud, cutOff)
             end
-            LeapFrogStep(cloud, topology, atomsGroups, pairs_atoms, time_simulation, time_step, step, test_location; mcwfm = true, laseroff = true, kwargs...)
+            time_step = LeapFrogStep(cloud, topology, atomsGroups, pairs_atoms, time_simulation, time_step, step, test_location; mcwfm = true, laseroff = true, kwargs...) #returns size of timestep used in LF
+            ### Updates states, energy and time of simulations
             CloudState(atomsGroups, cloud, step, test_location)
-            collisions = CollisionCounter(cloud, time_simulation)
+            collisions = CollisionCounter(cloud)
             energy = PotentialEnergy(cloud, topology, pairs_atoms, time_simulation; kwargs...)
             time_simulation += time_step
             ### Status output and conclusion of simulation
-            ExportStatus(time_simulation, collisions, energy)
+            ExportStatus(time_simulation, collisions, energy, test_location)
+            CleanUpOutput(atomsGroups, step, test_location)
             collisions != 0 && break
         end
 
@@ -146,6 +151,7 @@ using hamiltonian, methods_cloud, electrostatics, time_evolution
             if displacement > max_displacement
                 time_step /= 2; #halves time_step
                 i = 1; #resets loops on atom, to recalculate all displacements
+                println("Reducing size of time step to [s]: ", time_step)
             else
                 #updates velocities and positions to new values
                 cloud[i].velocity = new_velocity
@@ -154,6 +160,9 @@ using hamiltonian, methods_cloud, electrostatics, time_evolution
                 i += 1; #continue to next atom
             end
         end
+        
+        ### Update positions of atoms groups before time evolution
+        UpdateAtomsGroups(atomsGroups, cloud)
         
         ### Update accelerations
         ElectronicPropagation(topology, atomsGroups, time_simulation, time_step, step, test_location; kwargs...) #u1
@@ -164,7 +173,7 @@ using hamiltonian, methods_cloud, electrostatics, time_evolution
             atom.velocity = atom.velocity + atom.acceleration*time_step/2 #3, v1
         end
 
-
+        return time_step
     end
 
 
@@ -230,7 +239,7 @@ using hamiltonian, methods_cloud, electrostatics, time_evolution
         return energy
     end
 
-    function CollisionCounter(cloud, time::Float64)
+    function CollisionCounter(cloud)
         Collisions = 0
         Collisions = @distributed (+) for atom in cloud
             distance = sqrt(sum(atom.position.*atom.position));
@@ -239,12 +248,24 @@ using hamiltonian, methods_cloud, electrostatics, time_evolution
         return Collisions
     end
 
-    function ExportStatus(time_simulation, collisions, energy)
-        status = open("simulation_status.out", "a+")
+    function ExportStatus(time_simulation, collisions, energy,test_location::AbstractString)
+        status = open(test_location*"simulation_status.out", "a+")
         println(status, Dates.Time(Dates.now()),",",time_simulation*1e6,",",collisions,",",energy[1],",",energy[2])
         close(status)
     end
     
+    "========"
+    # Others
+    "========"
+
+    function CleanUpOutput(atomsGroups, step, test_location)
+        for i in 1:length(atomsGroups)
+            save_location = test_location*"step"*string(step)*"_g"*string(i)*"_";
+            rm(save_location*"proj_ops.jld2")
+        end
+    end
+    
+
 end
 
 

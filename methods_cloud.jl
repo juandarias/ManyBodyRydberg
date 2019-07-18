@@ -70,7 +70,9 @@ function RandomSelectorIndex(position_atoms, size_group)
     return subgroups
 end
 
-function CloudState(atomGroups, cloud, step, test_location)
+
+
+function CloudState(atomGroups, cloud, step, test_location)### TODO: rewrite for loops using example of UpdateAtomsGroups
     atomState, cloudState = [], []
     numberGroups = length(atomGroups)
     @sync for i in 1:numberGroups #loop through groups
@@ -88,11 +90,21 @@ function CloudState(atomGroups, cloud, step, test_location)
             atomPos_Index = deepcopy(subgroup[j])
             atomIndex = Int(atomPos_Index[4]) #the previous two lines could be replaced by atomIndex = subgroup[j][4]
             cloud[atomIndex].state = [cg,cr]
+            cloud[atomIndex].position = [atomPos_Index[1],atomPos_Index[2],atomPos_Index[3]]
         end
     end
 end
 
 
+function UpdateAtomsGroups(atomsGroups, cloud)
+    @sync for subgroup in atomsGroups #loop through groups
+        @async for atom in subgroup #loop through atoms in group
+            #Update positions of subgroups
+            atomIndex = Int(atom[4])
+            atom[1:3] = cloud[atomIndex].position
+        end
+    end
+end
 
 
 "========="
